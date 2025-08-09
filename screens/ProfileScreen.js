@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,31 +6,84 @@ import {
   TouchableOpacity, 
   StyleSheet, 
   Alert, 
-  Keyboard, 
-  TouchableWithoutFeedback,
   StatusBar,
   Image,
   ScrollView
 } from 'react-native';
 import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 export default function ProfileScreen({ navigation }) {
-  const [name, setName] = useState('Michael Mitchell');
-  const [age, setAge] = useState('28');
-  const [gender, setGender] = useState('Male');
-  const [phoneNumber, setPhoneNumber] = useState('+1 234 567 8900');
+  const [userData, setUserData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: '',
+    employeeId: '',
+    jobRole: '',
+    schedule: '',
+    siteLocation: '',
+    active: true,
+    createdAt: null,
+    uid: ''
+  });
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const handleSignOut = async () => {
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!userData.name || !userData.email) {
+      Alert.alert('Error', 'Name and email are required');
+      return;
+    }
+    
+    try {
+      const user = auth.currentUser;
+      if (user) {
+        await updateDoc(doc(db, 'users', user.uid), {
+          name: userData.name,
+          ...(userData.phone && { phone: userData.phone }), // Only update phone if it exists
+          ...(userData.role === 'employee' && {
+            employeeId: userData.employeeId,
+            jobRole: userData.jobRole,
+            schedule: userData.schedule,
+            siteLocation: userData.siteLocation
+          })
+        });
+        Alert.alert('Success', 'Profile updated successfully');
+        setIsEditing(false);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update profile');
+    }
+  };
+
+  const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
       'Are you sure you want to sign out?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out',
           style: 'destructive',
@@ -46,220 +99,228 @@ export default function ProfileScreen({ navigation }) {
     );
   };
 
-  const handleSave = () => {
-    if (!name || !age || !phoneNumber) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-    
-    // Here you would typically save to your database
-    Alert.alert('Success', 'Profile updated successfully');
-    setIsEditing(false);
+  const updateField = (field, value) => {
+    setUserData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleEditAvatar = () => {
-    Alert.alert(
-      'Update Profile Photo',
-      'Choose an option',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Camera',
-          onPress: () => {
-            // Handle camera selection
-            Alert.alert('Info', 'Camera functionality would be implemented here');
-          },
-        },
-        {
-          text: 'Gallery',
-          onPress: () => {
-            // Handle gallery selection
-            Alert.alert('Info', 'Gallery functionality would be implemented here');
-          },
-        },
-      ]
-    );
+  const getRoleColor = (role) => {
+    switch (role) {
+      case 'super_admin': return '#FF9800';
+      case 'admin': return '#2196F3';
+      case 'employee': return '#4CAF50';
+      default: return '#757575';
+    }
   };
+
+  const getRoleDisplayName = (role) => {
+    switch (role) {
+      case 'super_admin': return 'Super Admin';
+      case 'admin': return 'Admin';
+      case 'employee': return 'Employee';
+      default: return 'User';
+    }
+  };
+
+  const getInitials = (name) => {
+    return name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <View style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-        
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.header}>
-            <Text style={styles.logo}>
-              <Text style={styles.logoGreen}>RR THULA</Text>
-              <Text style={styles.logoBlue}>SI</Text>
-            </Text>
-            <Text style={styles.tagline}>My Profile</Text>
-          </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.header}>
+          <Text style={styles.logo}>
+            <Text style={styles.logoGreen}>RR THULA</Text>
+            <Text style={styles.logoBlue}>SI</Text>
+          </Text>
+          <Text style={styles.tagline}>My Profile</Text>
+        </View>
 
-          {/* Profile Avatar */}
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarWrapper}>
-              <Image
-                source={{
-                  uri: 'https://via.placeholder.com/120x120/2196F3/ffffff?text=MM'
-                }}
-                style={styles.avatar}
-              />
-              <TouchableOpacity 
-                style={styles.editAvatarButton}
-                onPress={handleEditAvatar}
-              >
-                <Text style={styles.editAvatarText}>✏️</Text>
-              </TouchableOpacity>
+        {/* Profile Avatar & Role */}
+        <View style={styles.avatarSection}>
+          <View style={styles.avatarWrapper}>
+            <View style={[styles.avatar, { backgroundColor: getRoleColor(userData.role) }]}>
+              <Text style={styles.avatarText}>{getInitials(userData.name)}</Text>
+            </View>
+            <View style={[styles.roleBadge, { backgroundColor: getRoleColor(userData.role) }]}>
+              <Text style={styles.roleText}>{getRoleDisplayName(userData.role)}</Text>
             </View>
           </View>
+          <View style={styles.statusContainer}>
+            <View style={[styles.statusDot, { backgroundColor: userData.active ? '#4CAF50' : '#f44336' }]} />
+            <Text style={styles.statusText}>{userData.active ? 'Active' : 'Inactive'}</Text>
+          </View>
+        </View>
 
-          <View style={styles.form}>
-            {/* Name Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Full Name</Text>
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={name}
-                onChangeText={setName}
-                editable={isEditing}
-                placeholder="Enter your full name"
-                placeholderTextColor="#999"
+        <View style={styles.form}>
+          {/* Basic Info */}
+          <InputField
+            label="Full Name"
+            value={userData.name}
+            onChangeText={(value) => updateField('name', value)}
+            editable={isEditing}
+            required
+          />
+
+          <InputField
+            label="Email"
+            value={userData.email}
+            onChangeText={(value) => updateField('email', value)}
+            editable={false} // Email usually shouldn't be editable
+            keyboardType="email-address"
+          />
+
+          {/* Phone field - only show if user has phone or is employee */}
+          {(userData.phone || userData.role === 'employee') && (
+            <InputField
+              label="Phone Number"
+              value={userData.phone || ''}
+              onChangeText={(value) => updateField('phone', value)}
+              editable={isEditing}
+              keyboardType="phone-pad"
+            />
+          )}
+
+          {/* Employee-specific fields */}
+          {userData.role === 'employee' && (
+            <>
+              <InputField
+                label="Employee ID"
+                value={userData.employeeId || ''}
+                onChangeText={(value) => updateField('employeeId', value)}
+                editable={false} // Employee ID is unique and cannot be edited
               />
-            </View>
 
-            {/* Age Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Age</Text>
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={age}
-                onChangeText={setAge}
+              <InputField
+                label="Job Role"
+                value={userData.jobRole || ''}
+                onChangeText={(value) => updateField('jobRole', value)}
                 editable={isEditing}
-                placeholder="Enter your age"
-                placeholderTextColor="#999"
-                keyboardType="numeric"
               />
-            </View>
 
-            {/* Gender Radio Buttons */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Gender</Text>
-              <View style={styles.radioContainer}>
-                <TouchableOpacity
-                  style={styles.radioButton}
-                  onPress={() => isEditing && setGender('Male')}
-                  disabled={!isEditing}
-                >
-                  <View style={[
-                    styles.radioCircle,
-                    gender === 'Male' && styles.radioCircleSelected
-                  ]}>
-                    {gender === 'Male' && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[
-                    styles.radioText,
-                    !isEditing && styles.radioTextDisabled
-                  ]}>Male</Text>
-                </TouchableOpacity>
+              <InputField
+                label="Schedule"
+                value={userData.schedule || ''}
+                onChangeText={(value) => updateField('schedule', value)}
+                editable={isEditing}
+              />
 
-                <TouchableOpacity
-                  style={styles.radioButton}
-                  onPress={() => isEditing && setGender('Female')}
-                  disabled={!isEditing}
-                >
-                  <View style={[
-                    styles.radioCircle,
-                    gender === 'Female' && styles.radioCircleSelected
-                  ]}>
-                    {gender === 'Female' && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[
-                    styles.radioText,
-                    !isEditing && styles.radioTextDisabled
-                  ]}>Female</Text>
-                </TouchableOpacity>
+              <InputField
+                label="Site Location"
+                value={userData.siteLocation || ''}
+                onChangeText={(value) => updateField('siteLocation', value)}
+                editable={isEditing}
+              />
+            </>
+          )}
 
-                <TouchableOpacity
-                  style={styles.radioButton}
-                  onPress={() => isEditing && setGender('Other')}
-                  disabled={!isEditing}
-                >
-                  <View style={[
-                    styles.radioCircle,
-                    gender === 'Other' && styles.radioCircleSelected
-                  ]}>
-                    {gender === 'Other' && <View style={styles.radioInner} />}
-                  </View>
-                  <Text style={[
-                    styles.radioText,
-                    !isEditing && styles.radioTextDisabled
-                  ]}>Other</Text>
-                </TouchableOpacity>
+          {/* Admin/Super Admin specific info */}
+          {(userData.role === 'admin' || userData.role === 'super_admin') && (
+            <View style={styles.infoSection}>
+              <Text style={styles.infoTitle}>Account Information</Text>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Role:</Text>
+                <Text style={styles.infoValue}>{getRoleDisplayName(userData.role)}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Account Created:</Text>
+                <Text style={styles.infoValue}>
+                  {userData.createdAt ? 
+                    new Date(userData.createdAt.seconds * 1000).toLocaleDateString() : 
+                    'N/A'
+                  }
+                </Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>User ID:</Text>
+                <Text style={styles.infoValue}>{userData.uid}</Text>
               </View>
             </View>
+          )}
 
-            {/* Phone Number Input */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Phone Number</Text>
-              <TextInput
-                style={[styles.input, !isEditing && styles.inputDisabled]}
-                value={phoneNumber}
-                onChangeText={setPhoneNumber}
-                editable={isEditing}
-                placeholder="Enter your phone number"
-                placeholderTextColor="#999"
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.buttonContainer}>
-              {!isEditing ? (
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            {!isEditing ? (
+              <TouchableOpacity 
+                style={styles.editButton} 
+                onPress={() => setIsEditing(true)}
+              >
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.editingButtons}>
                 <TouchableOpacity 
-                  style={styles.editButton} 
-                  onPress={() => setIsEditing(true)}
+                  style={styles.cancelButton} 
+                  onPress={() => {
+                    setIsEditing(false);
+                    fetchUserData(); // Reset changes
+                  }}
                 >
-                  <Text style={styles.editButtonText}>Edit Profile</Text>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-              ) : (
-                <View style={styles.editingButtons}>
-                  <TouchableOpacity 
-                    style={styles.cancelButton} 
-                    onPress={() => setIsEditing(false)}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.saveButton} 
-                    onPress={handleSave}
-                  >
-                    <Text style={styles.saveButtonText}>Save</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+                <TouchableOpacity 
+                  style={styles.saveButton} 
+                  onPress={handleSave}
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
-        </ScrollView>
-
-        {/* Sign Out Button */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
-          </TouchableOpacity>
         </View>
+      </ScrollView>
+
+      {/* Sign Out Button */}
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableWithoutFeedback>
+    </View>
   );
 }
+
+// Reusable Input Component
+const InputField = ({ label, value, onChangeText, editable = true, keyboardType = 'default', required = false }) => (
+  <View style={styles.inputGroup}>
+    <Text style={styles.label}>
+      {label} {required && <Text style={styles.required}>*</Text>}
+    </Text>
+    <TextInput
+      style={[styles.input, !editable && styles.inputDisabled]}
+      value={value}
+      onChangeText={onChangeText}
+      editable={editable}
+      placeholder={`Enter ${label.toLowerCase()}`}
+      placeholderTextColor="#999"
+      keyboardType={keyboardType}
+    />
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff',
     paddingHorizontal: 24,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
   },
   header: {
     alignItems: 'center',
@@ -282,35 +343,51 @@ const styles = StyleSheet.create({
     color: '#2196F3',
     marginBottom: 8,
   },
-  avatarContainer: {
+  avatarSection: {
     alignItems: 'center',
     marginBottom: 30,
   },
   avatarWrapper: {
-    position: 'relative',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#f0f0f0',
-  },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#2196F3',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#ffffff',
+    marginBottom: 8,
   },
-  editAvatarText: {
-    fontSize: 16,
+  avatarText: {
+    fontSize: 32,
+    fontWeight: 'bold',
     color: '#ffffff',
+  },
+  roleBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  roleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffffff',
+    textTransform: 'uppercase',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#666',
   },
   form: {
     flex: 1,
@@ -322,11 +399,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 8,
+    fontWeight: '500',
+  },
+  required: {
+    color: '#f44336',
   },
   input: {
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
@@ -337,49 +418,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     color: '#666',
   },
-  radioContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  radioButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    marginRight: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioCircleSelected: {
-    borderColor: '#2196F3',
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2196F3',
-  },
-  radioText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  radioTextDisabled: {
-    color: '#666',
-  },
   buttonContainer: {
-    marginTop: 10,
+    marginTop: 20,
     marginBottom: 20,
   },
   editButton: {
     backgroundColor: '#2196F3',
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   editButtonText: {
@@ -389,14 +435,13 @@ const styles = StyleSheet.create({
   },
   editingButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     gap: 12,
   },
   cancelButton: {
     flex: 1,
     backgroundColor: '#f5f5f5',
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -410,7 +455,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#4CAF50',
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   saveButtonText: {
@@ -424,12 +469,42 @@ const styles = StyleSheet.create({
   signOutButton: {
     backgroundColor: '#f44336',
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
   },
   signOutButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  infoSection: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  infoValue: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '400',
+    flex: 1,
+    textAlign: 'right',
   },
 });
