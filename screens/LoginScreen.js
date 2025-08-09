@@ -48,7 +48,7 @@ export default function LoginScreen({ navigation }) {
         await signOut(auth);
         Alert.alert(
           'Access Denied',
-          `Your account (${userData.role}) is not yet approved. Please contact an admin.`
+          `Your account (${userData.role}) is not yet approved. Please contact an admin or  superadmin.`
         );
         return;
       }

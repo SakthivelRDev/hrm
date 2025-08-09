@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, query, where, getDocs, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 
 export default function AdminDashboardScreen() {
   const [pendingUsers, setPendingUsers] = useState([]);
@@ -13,7 +13,25 @@ export default function AdminDashboardScreen() {
 
   const fetchPendingUsers = async () => {
     try {
-      const q = query(collection(db, 'users'), where('active', '==', false), where('role', '==', 'employee'));
+      // Check if a user is logged in to get siteLocation
+      if (!auth.currentUser) {
+        throw new Error('No user logged in');
+      }
+
+      // Fetch the logged-in user's siteLocation (no role or active check)
+      const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (!userDoc.exists()) {
+        throw new Error('User data not found');
+      }
+      const userSiteLocation = userDoc.data().siteLocation.toLowerCase();
+
+      // Query pending employees with matching siteLocation
+      const q = query(
+        collection(db, 'users'),
+        where('active', '==', false),
+        where('role', '==', 'employee'),
+        where('siteLocation', '==', userSiteLocation)
+      );
       const querySnapshot = await getDocs(q);
 
       const users = querySnapshot.docs.map(doc => ({
@@ -24,7 +42,7 @@ export default function AdminDashboardScreen() {
       setPendingUsers(users);
     } catch (error) {
       console.error('Error fetching users:', error);
-      Alert.alert('Error', 'Could not fetch pending users');
+      Alert.alert('Error', error.message === 'No user logged in' ? 'Please log in to access this dashboard.' : 'Could not fetch pending users');
     } finally {
       setLoading(false);
     }

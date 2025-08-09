@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 export default function RegisterScreen({ navigation }) {
@@ -31,12 +31,42 @@ export default function RegisterScreen({ navigation }) {
 
   const passwordsMatch = !confirmPassword || password === confirmPassword;
 
+  useEffect(() => {
+    if (role === 'employee') {
+      generateEmployeeId().then(setEmployeeId);
+    } else {
+      setEmployeeId('');
+    }
+  }, [role]);
+
   const handleRoleChange = (newRole) => {
     setRole(newRole);
     // Clear super admin fields if not registering as super admin
     if (newRole !== 'super_admin') {
       setSuperAdminEmail('');
       setSuperAdminPassword('');
+    }
+  };
+
+  const generateEmployeeId = async () => {
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('role', '==', 'employee'),
+        orderBy('employeeId', 'desc'),
+        limit(1)
+      );
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const lastEmployee = querySnapshot.docs[0].data();
+        const lastId = lastEmployee.employeeId;
+        const num = parseInt(lastId.replace('EMP', ''), 10) + 1;
+        return `EMP${num.toString().padStart(4, '0')}`;
+      }
+      return 'EMP0001'; // Default starting ID if no employees exist
+    } catch (error) {
+      console.error('Error generating employee ID:', error);
+      return 'EMP0001'; // Fallback to default in case of error
     }
   };
 
@@ -47,7 +77,7 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
 
-    if (role === 'employee' && (!phone || !employeeId || !jobRole || !siteLocation || !schedule)) {
+    if (role === 'employee' && (!phone || !jobRole || !siteLocation || !schedule)) {
       Alert.alert('Error', 'Please fill in all required fields for employee registration');
       return;
     }
@@ -65,29 +95,31 @@ export default function RegisterScreen({ navigation }) {
     try {
       const trimmedEmail = email.trim();
 
-      // Verify existing super admin credentials for any registration
-      if (!superAdminEmail || !superAdminPassword) {
+      // Verify existing super admin credentials only for admin or super_admin roles
+      if (role !== 'employee' && (!superAdminEmail || !superAdminPassword)) {
         Alert.alert('Error', 'Please provide existing super admin credentials');
         return;
       }
 
-      // Sign in with super admin credentials
-      const { user: superAdminUser } = await signInWithEmailAndPassword(
-        auth,
-        superAdminEmail.trim(),
-        superAdminPassword
-      );
+      if (role !== 'employee') {
+        // Sign in with super admin credentials
+        const { user: superAdminUser } = await signInWithEmailAndPassword(
+          auth,
+          superAdminEmail.trim(),
+          superAdminPassword
+        );
 
-      // Check if the user is a super admin
-      const superAdminDoc = await getDoc(doc(db, 'users', superAdminUser.uid));
-      if (!superAdminDoc.exists() || superAdminDoc.data().role !== 'super_admin' || !superAdminDoc.data().active) {
+        // Check if the user is a super admin
+        const superAdminDoc = await getDoc(doc(db, 'users', superAdminUser.uid));
+        if (!superAdminDoc.exists() || superAdminDoc.data().role !== 'super_admin' || !superAdminDoc.data().active) {
+          await signOut(auth);
+          Alert.alert('Error', 'Invalid super admin credentials or role');
+          return;
+        }
+
+        // Sign out the super admin to proceed with new user registration
         await signOut(auth);
-        Alert.alert('Error', 'Invalid super admin credentials or role');
-        return;
       }
-
-      // Sign out the super admin to proceed with new user registration
-      await signOut(auth);
 
       // Create the new user
       const { user } = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
@@ -104,11 +136,17 @@ export default function RegisterScreen({ navigation }) {
 
       // Add employee-specific fields
       if (role === 'employee') {
+        const newEmployeeId = await generateEmployeeId();
         userData.phone = phone;
-        userData.employeeId = employeeId;
+        userData.employeeId = newEmployeeId;
         userData.jobRole = jobRole;
-        userData.siteLocation = siteLocation;
+        userData.siteLocation = siteLocation.toLowerCase(); // Case-insensitive site location
         userData.schedule = schedule;
+      }
+
+      // Add admin-specific fields
+      if (role === 'admin') {
+        userData.siteLocation = siteLocation.toLowerCase(); // Case-insensitive site location
       }
 
       await setDoc(doc(db, 'users', user.uid), userData);
@@ -176,11 +214,10 @@ export default function RegisterScreen({ navigation }) {
           <CustomInput label="Full Name" value={name} onChangeText={setName} />
           {role === 'employee' && (
             <>
-              <CustomInput
-                label="Employee ID"
-                value={employeeId}
-                onChangeText={setEmployeeId}
-              />
+              <View style={styles.displayGroup}>
+                <Text style={styles.label}>Employee ID</Text>
+                <Text style={styles.displayText}>{employeeId || 'Generating...'}</Text>
+              </View>
               <CustomInput
                 label="Phone Number"
                 value={phone}
@@ -204,19 +241,32 @@ export default function RegisterScreen({ navigation }) {
               />
             </>
           )}
-          <CustomInput
-            label="Existing Super Admin Email"
-            value={superAdminEmail}
-            onChangeText={setSuperAdminEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-          <CustomInput
-            label="Existing Super Admin Password"
-            value={superAdminPassword}
-            onChangeText={setSuperAdminPassword}
-            secureTextEntry
-          />
+          {role === 'admin' && (
+            <>
+              <CustomInput
+                label="Site Location"
+                value={siteLocation}
+                onChangeText={setSiteLocation}
+              />
+            </>
+          )}
+          {(role === 'admin' || role === 'super_admin') && (
+            <>
+              <CustomInput
+                label="Existing Super Admin Email"
+                value={superAdminEmail}
+                onChangeText={setSuperAdminEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <CustomInput
+                label="Existing Super Admin Password"
+                value={superAdminPassword}
+                onChangeText={setSuperAdminPassword}
+                secureTextEntry
+              />
+            </>
+          )}
           <CustomInput
             label="Email Address"
             value={email}
@@ -326,5 +376,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     fontWeight: '600',
+  },
+  displayGroup: {
+    marginBottom: 16,
+  },
+  displayText: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#fafafa',
+    color: '#333',
   },
 });
