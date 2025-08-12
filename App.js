@@ -8,6 +8,7 @@ import SuperAdminTabNavigator from './navigation/SuperAdminTabNavigator';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import { View, ActivityIndicator } from 'react-native';
+import { defaultHeaderOptions } from './navigation/headerOptions';
 
 const Stack = createNativeStackNavigator();
 
@@ -54,13 +55,25 @@ function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={defaultHeaderOptions}>
       {user ? (
-        <Stack.Screen name="Main" component={MainScreen} />
+        <Stack.Screen
+          name="Main"
+          component={MainScreen}
+          options={{ headerShown: false }}
+        />
       ) : (
         <>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen
+            name="Login"
+            component={LoginScreen}
+            options={{ title: 'Login' }}
+          />
+          <Stack.Screen
+            name="Register"
+            component={RegisterScreen}
+            options={{ title: 'Register' }}
+          />
         </>
       )}
     </Stack.Navigator>

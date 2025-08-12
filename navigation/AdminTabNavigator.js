@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AdminDashboardScreen from '../screens/AdminDashboardScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import { defaultHeaderOptions } from './headerOptions';
 
 const Tab = createBottomTabNavigator();
 
@@ -11,7 +12,7 @@ export default function AdminTabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        headerShown: false,
+        ...defaultHeaderOptions,
         tabBarIcon: ({ color, size }) => {
           let iconName;
           if (route.name === 'AdminDashboard') iconName = 'home';
@@ -21,9 +22,9 @@ export default function AdminTabNavigator() {
         },
       })}
     >
-      <Tab.Screen name="AdminDashboard" component={AdminDashboardScreen} />
-      <Tab.Screen name="Capture" component={AttendanceScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="AdminDashboard" component={AdminDashboardScreen} options={{ title: 'Dashboard' }} />
+      <Tab.Screen name="Capture" component={AttendanceScreen} options={{ title: 'Capture' }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
     </Tab.Navigator>
   );
 }
